@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-01-14
+
+### Fixed
+- **@RetryingTest compatibility** - Fixed "NamespacedHierarchicalStore cannot be modified after it has been closed" error
+- Attachments now display correctly when using `@RetryingTest` with retries
+- Used thread-local tracking instead of extension context store for reported status
+- Added safe fallback when accessing test context after store closure
+
 ## [1.2.0] - 2026-01-14
 
 ### Added

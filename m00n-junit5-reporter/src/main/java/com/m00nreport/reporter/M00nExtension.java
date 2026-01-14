@@ -37,6 +37,10 @@ public class M00nExtension implements
         ExtensionContext.Namespace.create(M00nExtension.class);
     private static final String TEST_RESULT_KEY = "testResult";
     
+    // Thread-local to track if test was already reported (avoids store access after close)
+    // This is needed because JUnit closes the store between retry attempts in @RetryingTest
+    private static final ThreadLocal<Boolean> reportedInCurrentTest = ThreadLocal.withInitial(() -> false);
+    
     // Pattern to detect retry attempt from display name
     // Matches: "Attempt 1", "- Attempt 2", "Test name - Attempt 3", "[2]", "#1", etc.
     private static final Pattern RETRY_PATTERN = Pattern.compile(
@@ -85,7 +89,8 @@ public class M00nExtension implements
                 // Store in extension context
                 context.getStore(NAMESPACE).put(TEST_RESULT_KEY, result);
                 // Clear the reported flag for this new test/retry attempt
-                context.getStore(NAMESPACE).remove("reported");
+                // Use thread-local to avoid "store closed" errors with @RetryingTest
+                reportedInCurrentTest.set(false);
                 // Set thread-local for StepProxy
                 M00nStep.setCurrentTest(result);
             }
@@ -96,8 +101,9 @@ public class M00nExtension implements
     
     @Override
     public void afterEach(ExtensionContext context) {
-        // Always clean up thread-local
+        // Always clean up thread-locals
         M00nStep.clearCurrentTest();
+        reportedInCurrentTest.remove();
     }
     
     /**
@@ -126,8 +132,7 @@ public class M00nExtension implements
      * Common test interception logic for both regular tests and test templates.
      */
     private void interceptTest(Invocation<Void> invocation, ExtensionContext extensionContext) throws Throwable {
-        TestResult testResult = extensionContext.getStore(NAMESPACE)
-            .get(TEST_RESULT_KEY, TestResult.class);
+        TestResult testResult = getTestResultSafely(extensionContext);
         
         if (testResult == null) {
             // Reporter not tracking this test, just proceed
@@ -154,18 +159,16 @@ public class M00nExtension implements
      */
     private void reportTestResult(ExtensionContext context, String status, Throwable error) {
         try {
-            TestResult testResult = context.getStore(NAMESPACE)
-                .get(TEST_RESULT_KEY, TestResult.class);
-            
-            if (testResult == null) return;
-            
-            // Mark as reported so TestWatcher doesn't double-report
-            Boolean alreadyReported = context.getStore(NAMESPACE)
-                .get("reported", Boolean.class);
-            if (Boolean.TRUE.equals(alreadyReported)) {
+            // Use thread-local to check if already reported (avoids store access after close)
+            if (reportedInCurrentTest.get()) {
                 return; // Already reported by interceptor
             }
-            context.getStore(NAMESPACE).put("reported", Boolean.TRUE);
+            
+            TestResult testResult = getTestResultSafely(context);
+            if (testResult == null) return;
+            
+            // Mark as reported using thread-local (store may be closed for @RetryingTest)
+            reportedInCurrentTest.set(true);
             
             M00nReporter reporter = M00nReporter.getInstance();
             if (!reporter.isEnabled()) return;
@@ -244,10 +247,9 @@ public class M00nExtension implements
     
     private void completeTest(ExtensionContext context, String status, Throwable error) {
         try {
-            // Check if already reported by interceptor (for retry scenarios)
-            Boolean alreadyReported = context.getStore(NAMESPACE)
-                .get("reported", Boolean.class);
-            if (Boolean.TRUE.equals(alreadyReported)) {
+            // Check if already reported by interceptor using thread-local
+            // (avoids store access after close for @RetryingTest scenarios)
+            if (reportedInCurrentTest.get()) {
                 log.debug("[M00nExtension] Test already reported by interceptor, skipping TestWatcher callback");
                 return;
             }
@@ -258,9 +260,27 @@ public class M00nExtension implements
             String suiteName = getSuiteDisplayName(context);
             String testName = getTestDisplayName(context);
             
+            // Mark as reported before calling completeTest
+            reportedInCurrentTest.set(true);
+            
             reporter.completeTest(suiteName, testName, status, error);
         } catch (Exception e) {
             log.warn("[M00nExtension] completeTest failed: {}", e.getMessage());
+        }
+    }
+    
+    /**
+     * Safely get TestResult from context store, handling closed store gracefully.
+     * JUnit 5 closes the store between retry attempts in @RetryingTest, which can
+     * cause "NamespacedHierarchicalStore cannot be modified after closed" errors.
+     */
+    private TestResult getTestResultSafely(ExtensionContext context) {
+        try {
+            return context.getStore(NAMESPACE).get(TEST_RESULT_KEY, TestResult.class);
+        } catch (Exception e) {
+            // Store is closed (e.g., between retry attempts)
+            log.debug("[M00nExtension] Store already closed, using thread-local fallback");
+            return M00nStep.current().orElse(null);
         }
     }
     
