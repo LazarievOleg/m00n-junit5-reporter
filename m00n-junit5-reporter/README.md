@@ -1,20 +1,20 @@
-# M00n JUnit 5 Reporter
+# M00n Playwright JUnit 5 Reporter
 
 [![Maven Central](https://img.shields.io/maven-central/v/io.m00nreport/m00n-junit5-reporter.svg?label=Maven%20Central)](https://search.maven.org/search?q=g:io.m00nreport%20a:m00n-junit5-reporter)
 [![JitPack](https://jitpack.io/v/m00nreport/m00n-java-reporter.svg)](https://jitpack.io/#m00nreport/m00n-java-reporter)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A powerful JUnit 5 reporter for [M00n Report](https://app.m00n.report) that sends test results in real-time to your dashboard.
+A **Playwright JUnit 5** reporter for [M00n Report](https://app.m00n.report) that sends test results in real-time to your dashboard. Developed specifically for **Playwright Java** browser automation with JUnit 5.
 
 ## ✨ Features
 
+- 🎭 **Built for Playwright** - First-class Playwright Java integration with automatic artifact capture
 - 🚀 **Real-time streaming** - See tests as they run via WebSocket
-- 📝 **Automatic step tracking** - Use `@Step` annotation with Page Objects
+- 📝 **Automatic step tracking** - Use `@Step` annotation with AspectJ - no boilerplate code!
 - 🔄 **Retry tracking** - Full support for `@RetryingTest` with attempt history
-- 📸 **Rich attachments** - Screenshots, videos, traces, logs
+- 📸 **Rich attachments** - Screenshots, videos, Playwright traces
 - 🏷️ **Display names** - Use `@DisplayName` for readable test titles
 - ⚡ **Parallel execution** - Thread-safe for concurrent tests
-- 🎭 **Playwright ready** - Built-in integration for browser testing
 
 ---
 
@@ -35,24 +35,25 @@ java {
 
 repositories {
     mavenCentral()
-    // For pre-release versions:
-    // maven("https://jitpack.io")
 }
 
 dependencies {
-    // M00n Reporter
-    testImplementation("io.m00nreport:m00n-junit5-reporter:1.0.0")
+    // M00n Playwright JUnit 5 Reporter
+    implementation("io.m00nreport:m00n-junit5-reporter:1.0.0")
+    
+    // AspectJ for automatic step interception (no boilerplate!)
+    implementation("org.aspectj:aspectjrt:1.9.22")
     
     // JUnit 5
     testImplementation(platform("org.junit:junit-bom:5.11.3"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     
-    // JUnit Pioneer for @RetryingTest (optional)
-    testImplementation("org.junit-pioneer:junit-pioneer:2.3.0")
+    // Playwright (required)
+    implementation("com.microsoft.playwright:playwright:1.48.0")
     
-    // Playwright (optional)
-    implementation("com.microsoft.playwright:playwright:1.57.0")
+    // JUnit Pioneer for @RetryingTest (recommended for flaky tests)
+    testImplementation("org.junit-pioneer:junit-pioneer:2.3.0")
     
     // Logging
     implementation("ch.qos.logback:logback-classic:1.5.12")
@@ -61,8 +62,24 @@ dependencies {
     testImplementation("org.assertj:assertj-core:3.26.3")
 }
 
+// AspectJ configuration for automatic @Step tracking
+val aspectjWeaverConfig by configurations.creating {
+    isCanBeConsumed = false
+    isCanBeResolved = true
+}
+
+dependencies {
+    aspectjWeaverConfig("org.aspectj:aspectjweaver:1.9.22")
+}
+
 tasks.test {
     useJUnitPlatform()
+    
+    // Enable AspectJ agent for automatic step tracking
+    doFirst {
+        val aspectjWeaver = aspectjWeaverConfig.singleFile
+        jvmArgs("-javaagent:${aspectjWeaver.absolutePath}")
+    }
     
     // Run tests sequentially for consistent M00n reporting
     maxParallelForks = 1
@@ -78,13 +95,21 @@ tasks.test {
 
 ```xml
 <dependencies>
+    <!-- M00n Playwright JUnit 5 Reporter -->
     <dependency>
         <groupId>io.m00nreport</groupId>
         <artifactId>m00n-junit5-reporter</artifactId>
         <version>1.0.0</version>
-        <scope>test</scope>
     </dependency>
     
+    <!-- AspectJ Runtime -->
+    <dependency>
+        <groupId>org.aspectj</groupId>
+        <artifactId>aspectjrt</artifactId>
+        <version>1.9.22</version>
+    </dependency>
+    
+    <!-- JUnit 5 -->
     <dependency>
         <groupId>org.junit.jupiter</groupId>
         <artifactId>junit-jupiter</artifactId>
@@ -92,12 +117,26 @@ tasks.test {
         <scope>test</scope>
     </dependency>
     
+    <!-- Playwright (required) -->
     <dependency>
         <groupId>com.microsoft.playwright</groupId>
         <artifactId>playwright</artifactId>
-        <version>1.57.0</version>
+        <version>1.48.0</version>
     </dependency>
 </dependencies>
+
+<build>
+    <plugins>
+        <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-surefire-plugin</artifactId>
+            <version>3.2.5</version>
+            <configuration>
+                <argLine>-javaagent:${settings.localRepository}/org/aspectj/aspectjweaver/1.9.22/aspectjweaver-1.9.22.jar</argLine>
+            </configuration>
+        </plugin>
+    </plugins>
+</build>
 ```
 
 ---
@@ -135,7 +174,26 @@ Create `src/test/resources/junit-platform.properties`:
 junit.jupiter.extensions.autodetection.enabled=true
 ```
 
-### 3. Environment Variables (Alternative)
+### 3. Configure AspectJ (for automatic step tracking)
+
+Create `src/test/resources/META-INF/aop.xml`:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<aspectj>
+    <aspects>
+        <aspect name="com.m00nreport.reporter.M00nStepAspect"/>
+    </aspects>
+    <weaver options="-verbose">
+        <!-- Include your test packages -->
+        <include within="com.example..*"/>
+        <!-- Include M00n reporter -->
+        <include within="com.m00nreport.reporter..*"/>
+    </weaver>
+</aspectj>
+```
+
+### 4. Environment Variables (Alternative)
 
 ```bash
 export M00N_SERVER_URL=https://app.m00n.report
@@ -146,30 +204,32 @@ export M00N_TAGS="ci,${BRANCH_NAME}"
 
 ---
 
-## 🏗️ Project Structure (Recommended)
+## 🏗️ Playwright Project Structure (Recommended)
 
 ```
 src/test/
 ├── java/com/example/
-│   ├── tests/                    # Test classes
-│   │   ├── BasePlaywrightTest.java
-│   │   ├── LoginTests.java
-│   │   └── CheckoutTests.java
-│   └── pages/                    # Page Objects with @Step
-│       ├── PageFactory.java
-│       ├── LoginPage.java
-│       └── CheckoutPage.java
+│   ├── tests/                    # Playwright test classes
+│   │   ├── BasePlaywrightTest.java  # Base class with browser lifecycle
+│   │   ├── LoginTests.java          # Login page tests
+│   │   └── CheckoutTests.java       # Checkout flow tests
+│   └── pages/                    # Playwright Page Objects with @Step
+│       ├── LoginPage.java           # Login page locators & actions
+│       └── CheckoutPage.java        # Checkout page locators & actions
 └── resources/
     ├── m00n.properties           # M00n configuration
     ├── junit-platform.properties # JUnit configuration
+    ├── META-INF/aop.xml          # AspectJ configuration
     └── logback-test.xml          # Logging configuration
 ```
 
 ---
 
-## 🎭 Playwright Integration with Step Tracking
+## 🎭 Automatic Step Tracking with AspectJ
 
-### Step 1: Create Page Object Interfaces with `@Step`
+With AspectJ, simply annotate methods with `@Step` and they're automatically tracked - no factory classes needed!
+
+### Step 1: Create Page Objects with `@Step`
 
 ```java
 package com.example.pages;
@@ -179,114 +239,62 @@ import com.microsoft.playwright.Page;
 import com.microsoft.playwright.Locator;
 
 /**
- * Page Object interface for the Login page.
+ * Page Object for the Login page.
  * Methods annotated with @Step are automatically tracked as test steps.
  */
-public interface LoginPage {
+public class LoginPage {
+    
+    private final Page page;
+    private final Locator usernameInput;
+    private final Locator passwordInput;
+    private final Locator loginButton;
+    private final Locator errorMessage;
+    private final Locator welcomeMessage;
+
+    public LoginPage(Page page) {
+        this.page = page;
+        this.usernameInput = page.locator("#username");
+        this.passwordInput = page.locator("#password");
+        this.loginButton = page.locator("button[type='submit']");
+        this.errorMessage = page.locator(".error-message");
+        this.welcomeMessage = page.locator(".welcome");
+    }
 
     @Step("Open login page")
-    void open();
+    public void open() {
+        page.navigate("https://example.com/login");
+        page.waitForLoadState();
+    }
 
-    @Step("Enter username '{username}'")
-    void enterUsername(String username);
+    @Step("Enter username")
+    public void enterUsername(String username) {
+        usernameInput.fill(username);
+    }
 
     @Step("Enter password")
-    void enterPassword(String password);
+    public void enterPassword(String password) {
+        passwordInput.fill(password);
+    }
 
     @Step("Click login button")
-    void clickLogin();
+    public void clickLogin() {
+        loginButton.click();
+        page.waitForLoadState();
+    }
 
     @Step("Verify login successful")
-    boolean isLoggedIn();
+    public boolean isLoggedIn() {
+        return welcomeMessage.isVisible();
+    }
 
     @Step("Get error message")
-    String getErrorMessage();
-
-    // =========================================================================
-    // Implementation (nested class)
-    // =========================================================================
-    
-    class Impl implements LoginPage {
-        private final Page page;
-        private final Locator usernameInput;
-        private final Locator passwordInput;
-        private final Locator loginButton;
-        private final Locator errorMessage;
-        private final Locator welcomeMessage;
-
-        public Impl(Page page) {
-            this.page = page;
-            this.usernameInput = page.locator("#username");
-            this.passwordInput = page.locator("#password");
-            this.loginButton = page.locator("button[type='submit']");
-            this.errorMessage = page.locator(".error-message");
-            this.welcomeMessage = page.locator(".welcome");
-        }
-
-        @Override
-        public void open() {
-            page.navigate("https://example.com/login");
-            page.waitForLoadState();
-        }
-
-        @Override
-        public void enterUsername(String username) {
-            usernameInput.fill(username);
-        }
-
-        @Override
-        public void enterPassword(String password) {
-            passwordInput.fill(password);
-        }
-
-        @Override
-        public void clickLogin() {
-            loginButton.click();
-            page.waitForLoadState();
-        }
-
-        @Override
-        public boolean isLoggedIn() {
-            return welcomeMessage.isVisible();
-        }
-
-        @Override
-        public String getErrorMessage() {
-            return errorMessage.textContent();
-        }
+    public String getErrorMessage() {
+        return errorMessage.textContent();
     }
 }
 ```
 
-### Step 2: Create PageFactory with StepProxy
-
-```java
-package com.example.pages;
-
-import com.m00nreport.reporter.StepProxy;
-import com.microsoft.playwright.Page;
-
-/**
- * Factory for creating page objects with automatic step tracking.
- * All @Step annotated methods are tracked and reported to M00n Report.
- */
-public final class PageFactory {
-
-    private PageFactory() {} // Utility class
-
-    public static LoginPage createLoginPage(Page page) {
-        return StepProxy.create(LoginPage.class, new LoginPage.Impl(page));
-    }
-
-    public static CheckoutPage createCheckoutPage(Page page) {
-        return StepProxy.create(CheckoutPage.class, new CheckoutPage.Impl(page));
-    }
-    
-    // Add more page factory methods as needed...
-}
-```
-
-### Step 3: Create Base Test Class
+### Step 2: Create Base Test Class
 
 ```java
 package com.example.tests;
@@ -296,7 +304,6 @@ import com.m00nreport.reporter.M00nStep;
 import com.m00nreport.reporter.model.AttachmentData;
 import com.m00nreport.reporter.model.TestResult;
 import com.microsoft.playwright.*;
-import com.microsoft.playwright.options.WaitUntilState;
 import org.junit.jupiter.api.*;
 
 import java.nio.file.Files;
@@ -305,33 +312,19 @@ import java.nio.file.Paths;
 
 /**
  * Base class for all Playwright tests.
- * 
- * Provides:
- * - Browser lifecycle management (shared browser instance)
- * - Context and page setup per test with video/tracing
- * - Automatic artifact capture on failure (screenshot, trace, video)
- * - Integration with M00n Reporter for test tracking
  */
 public abstract class BasePlaywrightTest {
 
-    // Shared browser instance (created once per test class)
     private static Playwright playwright;
     private static Browser browser;
     
-    // Per-test instances
     protected BrowserContext context;
     protected Page page;
     
-    // Artifacts directory
     protected static final Path ARTIFACTS_DIR = Paths.get("test-results");
     
-    // Test tracking
     private String currentTestId;
     private String currentTestName;
-
-    // =========================================================================
-    // Lifecycle: Class Level
-    // =========================================================================
 
     @BeforeAll
     static void launchBrowser() {
@@ -339,13 +332,11 @@ public abstract class BasePlaywrightTest {
         browser = playwright.chromium().launch(new BrowserType.LaunchOptions()
             .setHeadless(true));
         
-        // Create artifacts directories
         try {
             Files.createDirectories(ARTIFACTS_DIR.resolve("traces"));
             Files.createDirectories(ARTIFACTS_DIR.resolve("videos"));
-            Files.createDirectories(ARTIFACTS_DIR.resolve("screenshots"));
         } catch (Exception e) {
-            System.err.println("[BaseTest] Failed to create artifacts dirs: " + e.getMessage());
+            System.err.println("Failed to create artifacts dirs: " + e.getMessage());
         }
     }
 
@@ -355,28 +346,19 @@ public abstract class BasePlaywrightTest {
         if (playwright != null) playwright.close();
     }
 
-    // =========================================================================
-    // Lifecycle: Test Level
-    // =========================================================================
-
     @BeforeEach
     void setUp(TestInfo testInfo) {
-        // Create context with video recording
         context = browser.newContext(new Browser.NewContextOptions()
             .setViewportSize(1280, 720)
-            .setRecordVideoDir(ARTIFACTS_DIR.resolve("videos"))
-            .setRecordVideoSize(1280, 720));
+            .setRecordVideoDir(ARTIFACTS_DIR.resolve("videos")));
         
         page = context.newPage();
         
-        // Start tracing for debugging
         context.tracing().start(new Tracing.StartOptions()
             .setScreenshots(true)
-            .setSnapshots(true)
-            .setSources(true));
+            .setSnapshots(true));
         
-        // Store test info for artifact capture
-        this.currentTestName = sanitizeFilename(testInfo.getDisplayName());
+        this.currentTestName = testInfo.getDisplayName();
         this.currentTestId = M00nStep.current()
             .map(TestResult::getTestId)
             .orElse(null);
@@ -384,132 +366,48 @@ public abstract class BasePlaywrightTest {
 
     @AfterEach
     void tearDown() {
-        final String testId = this.currentTestId;
-        final boolean testFailed = M00nStep.isCurrentTestFailed();
-        
-        if (testFailed && testId != null) {
-            captureFailureArtifacts(testId);
-        } else {
-            stopTracingQuietly();
+        if (M00nStep.isCurrentTestFailed() && currentTestId != null) {
+            captureFailureArtifacts(currentTestId);
         }
         
-        closeContextQuietly();
-    }
-
-    // =========================================================================
-    // Artifact Capture
-    // =========================================================================
-
-    private void captureFailureArtifacts(String testId) {
-        System.out.println("[M00nReporter] Capturing artifacts for failed test: " + testId);
-        
-        // 1. Screenshot (before closing anything)
-        captureScreenshot(testId);
-        
-        // 2. Trace
-        captureTrace(testId);
-        
-        // 3. Video (after closing context)
-        Path videoPath = getVideoPath();
-        closeContextQuietly();
-        captureVideo(testId, videoPath);
-    }
-
-    private void captureScreenshot(String testId) {
-        if (page == null) return;
-        try {
-            byte[] screenshot = page.screenshot(new Page.ScreenshotOptions().setFullPage(true));
-            M00nReporter.getInstance().attachToTest(testId,
-                AttachmentData.screenshot("failure-screenshot.png", screenshot));
-            System.out.println("[M00nReporter] ✓ Screenshot attached");
-        } catch (Exception e) {
-            System.err.println("[M00nReporter] ✗ Screenshot failed: " + e.getMessage());
-        }
-    }
-
-    private void captureTrace(String testId) {
-        if (context == null) return;
-        Path tracePath = ARTIFACTS_DIR.resolve("traces").resolve(currentTestName + "-trace.zip");
-        try {
-            context.tracing().stop(new Tracing.StopOptions().setPath(tracePath));
-            if (Files.exists(tracePath)) {
-                byte[] traceBytes = Files.readAllBytes(tracePath);
-                M00nReporter.getInstance().attachToTest(testId,
-                    AttachmentData.trace("trace.zip", traceBytes));
-                System.out.println("[M00nReporter] ✓ Trace attached");
-            }
-        } catch (Exception e) {
-            System.err.println("[M00nReporter] ✗ Trace failed: " + e.getMessage());
-        }
-    }
-
-    private Path getVideoPath() {
-        if (page == null || page.video() == null) return null;
-        try {
-            return page.video().path();
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    private void captureVideo(String testId, Path videoPath) {
-        if (videoPath == null || !Files.exists(videoPath)) return;
-        try {
-            Thread.sleep(300); // Wait for video to finalize
-            byte[] videoBytes = Files.readAllBytes(videoPath);
-            M00nReporter.getInstance().attachToTest(testId,
-                AttachmentData.video("video.webm", videoBytes));
-            System.out.println("[M00nReporter] ✓ Video attached");
-        } catch (Exception e) {
-            System.err.println("[M00nReporter] ✗ Video failed: " + e.getMessage());
-        }
-    }
-
-    private void stopTracingQuietly() {
-        if (context == null) return;
-        try {
-            Path tracePath = ARTIFACTS_DIR.resolve("traces").resolve(currentTestName + "-trace.zip");
-            context.tracing().stop(new Tracing.StopOptions().setPath(tracePath));
-        } catch (Exception ignored) {}
-    }
-
-    private void closeContextQuietly() {
         if (context != null) {
             try { context.close(); } catch (Exception ignored) {}
-            context = null;
         }
     }
 
-    // =========================================================================
-    // Utilities
-    // =========================================================================
-
-    private String sanitizeFilename(String name) {
-        String sanitized = name.replaceAll("[^a-zA-Z0-9-_]", "_")
-                               .replaceAll("_+", "_");
-        return sanitized.substring(0, Math.min(sanitized.length(), 100));
-    }
-
-    protected void navigateTo(String url) {
-        page.navigate(url, new Page.NavigateOptions()
-            .setWaitUntil(WaitUntilState.DOMCONTENTLOADED));
+    private void captureFailureArtifacts(String testId) {
+        // Screenshot
+        try {
+            byte[] screenshot = page.screenshot();
+            M00nReporter.getInstance().attachToTest(testId,
+                AttachmentData.screenshot("failure.png", screenshot));
+        } catch (Exception e) {}
+        
+        // Trace
+        try {
+            Path tracePath = ARTIFACTS_DIR.resolve("traces/trace.zip");
+            context.tracing().stop(new Tracing.StopOptions().setPath(tracePath));
+            byte[] traceBytes = Files.readAllBytes(tracePath);
+            M00nReporter.getInstance().attachToTest(testId,
+                AttachmentData.trace("trace.zip", traceBytes));
+        } catch (Exception e) {}
     }
 }
 ```
 
-### Step 4: Write Your Tests
+### Step 3: Write Your Tests
 
 ```java
 package com.example.tests;
 
 import com.example.pages.LoginPage;
-import com.example.pages.PageFactory;
 import org.junit.jupiter.api.*;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Login tests using Page Object pattern with automatic step tracking.
+ * Login tests using AspectJ-based step tracking.
+ * No PageFactory needed - just create page objects directly!
  */
 @DisplayName("Login Tests")
 class LoginTests extends BasePlaywrightTest {
@@ -517,9 +415,9 @@ class LoginTests extends BasePlaywrightTest {
     private LoginPage loginPage;
 
     @BeforeEach
-    void setUpPage(TestInfo testInfo) {
-        // Create page object with step tracking
-        loginPage = PageFactory.createLoginPage(page);
+    void setUpPage() {
+        // Just create the page object directly - AspectJ handles the rest!
+        loginPage = new LoginPage(page);
     }
 
     @Test
@@ -545,13 +443,6 @@ class LoginTests extends BasePlaywrightTest {
         assertFalse(loginPage.isLoggedIn());
         assertEquals("Invalid credentials", loginPage.getErrorMessage());
     }
-
-    @Test
-    @Disabled("Feature not implemented")
-    @DisplayName("⏭️ Should support two-factor auth")
-    void testTwoFactorAuth() {
-        // This test is skipped
-    }
 }
 ```
 
@@ -559,23 +450,23 @@ class LoginTests extends BasePlaywrightTest {
 
 ## 📝 Step Tracking Options
 
-### Option 1: Page Objects with `@Step` (Recommended)
+### Option 1: AspectJ (Recommended - Zero Boilerplate!)
 
-Use `StepProxy.create()` to wrap page objects - all `@Step` annotated methods are automatically tracked.
+With AspectJ enabled, just annotate methods with `@Step`:
 
 ```java
-// Interface with @Step annotations
-public interface MyPage {
+public class MyPage {
     @Step("Navigate to page")
-    void open();
+    public void open() { /* ... */ }
     
     @Step  // Auto-generates title from method name
-    void clickSubmitButton();
+    public void clickSubmitButton() { /* ... */ }
 }
 
-// Create proxied instance
-MyPage page = StepProxy.create(MyPage.class, new MyPageImpl(playwrightPage));
-page.open();  // Automatically tracked!
+// Usage - steps are automatically tracked!
+MyPage page = new MyPage(playwrightPage);
+page.open();           // Tracked: "Navigate to page"
+page.clickSubmitButton();  // Tracked: "Click submit button"
 ```
 
 ### Option 2: Manual Steps
@@ -647,7 +538,7 @@ AttachmentData.file("data.json", jsonBytes, "application/json");
 | `m00n.serverUrl` | `M00N_SERVER_URL` | - | Server URL (required) |
 | `m00n.apiKey` | `M00N_API_KEY` | - | Project API key (required) |
 | `m00n.enabled` | `M00N_ENABLED` | `true` | Enable/disable reporter |
-| `m00n.launch` | `M00N_LAUNCH` | `Java Tests` | Run/launch name |
+| `m00n.launch` | `M00N_LAUNCH` | `Playwright Java Tests` | Run/launch name |
 | `m00n.tags` | `M00N_TAGS` | - | Comma-separated tags |
 | `m00n.debug` | `M00N_DEBUG` | `false` | Enable debug logging |
 | `m00n.timeout` | `M00N_TIMEOUT` | `30000` | HTTP timeout (ms) |

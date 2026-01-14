@@ -1,160 +1,111 @@
 package com.m00nreport.tests;
 
-import com.m00nreport.reporter.StepProxy;
 import com.m00nreport.reporter.annotations.Step;
 import com.microsoft.playwright.*;
 import org.junit.jupiter.api.*;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
 
 import static com.microsoft.playwright.assertions.PlaywrightAssertions.assertThat;
 
 /**
- * Documentation tests.
+ * Documentation page tests using AspectJ-based step tracking.
  */
-@DisplayName("Playwright Documentation Tests")
+@DisplayName("Documentation Tests")
 class DocumentationTests extends BasePlaywrightTest {
     
     @Test
-    @DisplayName("Introduction page loads")
-    void introductionLoads(Page page) {
-        var docs = StepProxy.create(DocsPage.class, new DocsPageImpl(page));
-        docs.openIntroduction();
-        docs.verifyPageLoaded();
+    @DisplayName("Docs homepage loads")
+    void docsHomepageLoads(Page page) {
+        var docs = new DocsPage(page);
+        docs.open();
+        docs.verifyLoaded();
+    }
+    
+    @Test
+    @DisplayName("Navigation sidebar is visible")
+    void navigationSidebarVisible(Page page) {
+        var docs = new DocsPage(page);
+        docs.open();
         docs.verifySidebar();
     }
     
     @Test
-    @DisplayName("Code examples are present")
-    void codeExamples(Page page) {
-        var docs = StepProxy.create(DocsPage.class, new DocsPageImpl(page));
-        docs.openIntroduction();
-        docs.verifyCodeBlocks();
+    @DisplayName("Table of contents is present")
+    void tableOfContentsPresent(Page page) {
+        var docs = new DocsPage(page);
+        docs.open();
+        docs.verifyTableOfContents();
     }
     
     @Test
-    @DisplayName("Sidebar navigation works")
-    void sidebarNavigation(Page page) {
-        var docs = StepProxy.create(DocsPage.class, new DocsPageImpl(page));
-        docs.openIntroduction();
-        docs.clickWritingTests();
-        docs.verifyWritingTestsPage();
+    @DisplayName("Search functionality works")
+    void searchWorks(Page page) {
+        var docs = new DocsPage(page);
+        docs.open();
+        docs.search("locator");
+        docs.verifySearchResults();
     }
     
     @Test
-    @DisplayName("Search functionality")
-    void searchFunctionality(Page page) {
-        var docs = StepProxy.create(DocsPage.class, new DocsPageImpl(page));
-        docs.openIntroduction();
-        docs.openSearch();
-        docs.verifySearchModal();
-        docs.closeSearch();
-    }
-    
-    @ParameterizedTest(name = "Page {0} loads")
-    @ValueSource(strings = {"/docs/intro", "/docs/writing-tests", "/docs/running-tests"})
-    @DisplayName("Documentation pages load")
-    void documentationPages(String path, Page page) {
-        var docs = StepProxy.create(DocsPage.class, new DocsPageImpl(page));
-        docs.openPage(path);
-        docs.verifyPageLoaded();
+    @DisplayName("Code examples are highlighted")
+    void codeExamplesHighlighted(Page page) {
+        var docs = new DocsPage(page);
+        docs.open();
+        docs.navigateToGettingStarted();
+        docs.verifyCodeHighlighting();
     }
     
     // =========================================================================
-    // Page Object Interface
+    // Page Object Class
     // =========================================================================
     
-    public interface DocsPage {
-        @Step("Open introduction page")
-        void openIntroduction();
-        
-        @Step("Open documentation page")
-        void openPage(String path);
-        
-        @Step("Verify page loaded")
-        void verifyPageLoaded();
-        
-        @Step("Verify sidebar")
-        void verifySidebar();
-        
-        @Step("Verify code blocks")
-        void verifyCodeBlocks();
-        
-        @Step("Click Writing Tests link")
-        void clickWritingTests();
-        
-        @Step("Verify Writing Tests page")
-        void verifyWritingTestsPage();
-        
-        @Step("Open search")
-        void openSearch();
-        
-        @Step("Verify search modal")
-        void verifySearchModal();
-        
-        @Step("Close search")
-        void closeSearch();
-    }
-    
-    // =========================================================================
-    // Implementation
-    // =========================================================================
-    
-    public static class DocsPageImpl implements DocsPage {
+    private static class DocsPage {
         private final Page page;
         
-        public DocsPageImpl(Page page) {
+        DocsPage(Page page) {
             this.page = page;
         }
         
-        @Override
-        public void openIntroduction() {
-            page.navigate("https://playwright.dev/docs/intro");
+        @Step("Open documentation page")
+        public void open() {
+            page.navigate("https://playwright.dev/java/docs/intro");
         }
         
-        @Override
-        public void openPage(String path) {
-            page.navigate("https://playwright.dev" + path);
+        @Step("Verify docs page is loaded")
+        public void verifyLoaded() {
+            assertThat(page).hasTitle(java.util.regex.Pattern.compile(".*Playwright.*"));
         }
         
-        @Override
-        public void verifyPageLoaded() {
-            assertThat(page.locator("article")).isVisible();
-        }
-        
-        @Override
+        @Step("Verify sidebar navigation")
         public void verifySidebar() {
             assertThat(page.locator(".theme-doc-sidebar-menu")).isVisible();
         }
         
-        @Override
-        public void verifyCodeBlocks() {
-            assertThat(page.locator("pre code").first()).isVisible();
+        @Step("Verify table of contents")
+        public void verifyTableOfContents() {
+            assertThat(page.locator(".table-of-contents")).isVisible();
         }
         
-        @Override
-        public void clickWritingTests() {
-            page.locator("a[href='/docs/writing-tests']").click();
-        }
-        
-        @Override
-        public void verifyWritingTestsPage() {
-            assertThat(page).hasURL(java.util.regex.Pattern.compile(".*writing-tests.*"));
-        }
-        
-        @Override
-        public void openSearch() {
+        @Step("Search for query")
+        public void search(String query) {
             page.locator("button.DocSearch").click();
+            page.locator(".DocSearch-Input").fill(query);
+            page.waitForTimeout(500);
         }
         
-        @Override
-        public void verifySearchModal() {
-            assertThat(page.locator(".DocSearch-Modal")).isVisible();
+        @Step("Verify search results appear")
+        public void verifySearchResults() {
+            assertThat(page.locator(".DocSearch-Dropdown")).isVisible();
         }
         
-        @Override
-        public void closeSearch() {
-            page.keyboard().press("Escape");
+        @Step("Navigate to Getting Started")
+        public void navigateToGettingStarted() {
+            page.locator("a:has-text('Getting started')").first().click();
+            page.waitForLoadState();
+        }
+        
+        @Step("Verify code syntax highlighting")
+        public void verifyCodeHighlighting() {
+            assertThat(page.locator("pre code")).first().isVisible();
         }
     }
 }

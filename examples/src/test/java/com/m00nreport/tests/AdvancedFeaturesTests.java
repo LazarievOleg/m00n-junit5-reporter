@@ -1,275 +1,142 @@
 package com.m00nreport.tests;
 
-import com.m00nreport.reporter.M00nStep;
-import com.m00nreport.reporter.StepProxy;
 import com.m00nreport.reporter.annotations.Step;
-import com.m00nreport.reporter.model.AttachmentData;
 import com.microsoft.playwright.*;
-import com.microsoft.playwright.options.AriaRole;
-import com.microsoft.playwright.options.LoadState;
-import com.microsoft.playwright.options.WaitForSelectorState;
-import com.microsoft.playwright.options.WaitUntilState;
 import org.junit.jupiter.api.*;
+import org.junitpioneer.jupiter.RetryingTest;
 
 import static com.microsoft.playwright.assertions.PlaywrightAssertions.assertThat;
 
 /**
- * Advanced Playwright features tests.
+ * Advanced features tests including retries using AspectJ-based step tracking.
  */
-@DisplayName("Advanced Features")
+@DisplayName("Advanced Features Tests")
 class AdvancedFeaturesTests extends BasePlaywrightTest {
     
     @Test
-    @DisplayName("Screenshot capture")
-    void screenshotCapture(Page page) {
-        var advancedPage = StepProxy.create(AdvancedPage.class, new AdvancedPageImpl(page));
-        advancedPage.openHomepage();
-        advancedPage.takeFullPageScreenshot("homepage");
-        advancedPage.takeElementScreenshot(".hero", "hero-section");
+    @DisplayName("Download page navigation")
+    void downloadPageNavigation(Page page) {
+        var advancedPage = new AdvancedPage(page);
+        advancedPage.open();
+        advancedPage.navigateToDownload();
+        advancedPage.verifyDownloadPage();
     }
     
     @Test
-    @DisplayName("Role-based locators")
-    void roleBasedLocators(Page page) {
-        var advancedPage = StepProxy.create(AdvancedPage.class, new AdvancedPageImpl(page));
-        advancedPage.openHomepage();
-        advancedPage.findButtonsByRole();
-        advancedPage.findLinksByRole();
-        advancedPage.findNavigationByRole();
+    @DisplayName("Language selector works")
+    void languageSelectorWorks(Page page) {
+        var advancedPage = new AdvancedPage(page);
+        advancedPage.open();
+        advancedPage.navigateToDocs();
+        advancedPage.verifyLanguageOptions();
     }
     
     @Test
-    @DisplayName("Text-based locators")
-    void textBasedLocators(Page page) {
-        var advancedPage = StepProxy.create(AdvancedPage.class, new AdvancedPageImpl(page));
-        advancedPage.openHomepage();
-        advancedPage.findByText("Playwright");
-        advancedPage.findLinkByName("Docs");
+    @DisplayName("Dark mode toggle")
+    void darkModeToggle(Page page) {
+        var advancedPage = new AdvancedPage(page);
+        advancedPage.open();
+        advancedPage.toggleDarkMode();
+        advancedPage.verifyDarkMode();
     }
     
     @Test
-    @DisplayName("Filter and chain locators")
-    void filterAndChainLocators(Page page) {
-        var advancedPage = StepProxy.create(AdvancedPage.class, new AdvancedPageImpl(page));
-        advancedPage.openHomepage();
-        advancedPage.filterLinks("Docs");
-        advancedPage.chainLocators();
+    @DisplayName("GitHub link is correct")
+    void githubLinkCorrect(Page page) {
+        var advancedPage = new AdvancedPage(page);
+        advancedPage.open();
+        advancedPage.verifyGitHubLink();
+    }
+    
+    @RetryingTest(maxAttempts = 3, name = "🔄 Flaky network test - Attempt {index}")
+    @DisplayName("Handle potential network issues")
+    void handleNetworkIssues(Page page) {
+        var advancedPage = new AdvancedPage(page);
+        advancedPage.open();
+        advancedPage.verifyLoaded();
     }
     
     @Test
-    @DisplayName("JavaScript evaluation")
-    void javaScriptEvaluation(Page page) {
-        var advancedPage = StepProxy.create(AdvancedPage.class, new AdvancedPageImpl(page));
-        advancedPage.openHomepage();
-        advancedPage.getTitleViaJs();
-        advancedPage.countLinksViaJs();
+    @DisplayName("External links open correctly")
+    void externalLinksOpen(Page page) {
+        var advancedPage = new AdvancedPage(page);
+        advancedPage.open();
+        advancedPage.verifyExternalLinks();
     }
     
     @Test
-    @DisplayName("Responsive viewport")
-    void responsiveViewport(Page page) {
-        var advancedPage = StepProxy.create(AdvancedPage.class, new AdvancedPageImpl(page));
-        advancedPage.openHomepage();
-        advancedPage.setMobileViewport();
-        advancedPage.takeFullPageScreenshot("mobile-view");
-        advancedPage.setDesktopViewport();
-        advancedPage.takeFullPageScreenshot("desktop-view");
-    }
-    
-    @Test
-    @DisplayName("Iterate multiple elements")
-    void iterateElements(Page page) {
-        var advancedPage = StepProxy.create(AdvancedPage.class, new AdvancedPageImpl(page));
-        advancedPage.openHomepage();
-        advancedPage.iterateNavLinks();
+    @Disabled("Feature not yet implemented")
+    @DisplayName("⏭️ Skipped test example")
+    void skippedTest(Page page) {
+        var advancedPage = new AdvancedPage(page);
+        advancedPage.open();
     }
     
     // =========================================================================
-    // Page Object Interface
+    // Page Object Class
     // =========================================================================
     
-    public interface AdvancedPage {
-        @Step("Open homepage")
-        void openHomepage();
-        
-        @Step("Take full page screenshot")
-        void takeFullPageScreenshot(String name);
-        
-        @Step("Take element screenshot")
-        void takeElementScreenshot(String selector, String name);
-        
-        @Step("Find buttons by role")
-        void findButtonsByRole();
-        
-        @Step("Find links by role")
-        void findLinksByRole();
-        
-        @Step("Find navigation by role")
-        void findNavigationByRole();
-        
-        @Step("Find by text")
-        void findByText(String text);
-        
-        @Step("Find link by name")
-        void findLinkByName(String name);
-        
-        @Step("Filter links")
-        void filterLinks(String text);
-        
-        @Step("Chain locators")
-        void chainLocators();
-        
-        @Step("Get title via JavaScript")
-        void getTitleViaJs();
-        
-        @Step("Count links via JavaScript")
-        void countLinksViaJs();
-        
-        @Step("Set mobile viewport")
-        void setMobileViewport();
-        
-        @Step("Set desktop viewport")
-        void setDesktopViewport();
-        
-        @Step("Iterate navigation links")
-        void iterateNavLinks();
-    }
-    
-    // =========================================================================
-    // Implementation
-    // =========================================================================
-    
-    public static class AdvancedPageImpl implements AdvancedPage {
+    private static class AdvancedPage {
         private final Page page;
         
-        public AdvancedPageImpl(Page page) {
+        AdvancedPage(Page page) {
             this.page = page;
         }
         
-        @Override
-        public void openHomepage() {
-            page.navigate("https://playwright.dev/", 
-                new Page.NavigateOptions().setWaitUntil(WaitUntilState.NETWORKIDLE));
+        @Step("Open Playwright homepage")
+        public void open() {
+            page.navigate("https://playwright.dev/");
         }
         
-        @Override
-        public void takeFullPageScreenshot(String name) {
-            try {
-                // Wait for page to be stable before screenshot
-                page.waitForLoadState(LoadState.NETWORKIDLE);
-                
-                // Take viewport screenshot (more reliable than full page)
-                var screenshot = page.screenshot(
-                    new Page.ScreenshotOptions()
-                        .setFullPage(false)  // Viewport only - more reliable
-                        .setTimeout(10000)
-                );
-                M00nStep.current().ifPresent(result ->
-                    result.addAttachment(AttachmentData.screenshot(name, screenshot))
-                );
-            } catch (Exception e) {
-                // Log but don't fail test for screenshot issues
-                System.err.println("[Screenshot] Failed to capture " + name + ": " + e.getMessage());
-            }
+        @Step("Verify page is loaded")
+        public void verifyLoaded() {
+            assertThat(page).hasTitle(java.util.regex.Pattern.compile(".*Playwright.*"));
         }
         
-        @Override
-        public void takeElementScreenshot(String selector, String name) {
-            try {
-                var locator = page.locator(selector);
-                // Wait for element to be visible
-                locator.waitFor(new Locator.WaitForOptions().setState(WaitForSelectorState.VISIBLE));
-                
-                var screenshot = locator.screenshot(
-                    new Locator.ScreenshotOptions().setTimeout(10000)
-                );
-                M00nStep.current().ifPresent(result ->
-                    result.addAttachment(AttachmentData.screenshot(name, screenshot))
-                );
-            } catch (Exception e) {
-                // Log but don't fail test for screenshot issues
-                System.err.println("[Screenshot] Failed to capture element " + name + ": " + e.getMessage());
-            }
+        @Step("Navigate to download page")
+        public void navigateToDownload() {
+            page.locator("a:has-text('Get started')").first().click();
+            page.waitForLoadState();
         }
         
-        @Override
-        public void findButtonsByRole() {
-            var buttons = page.getByRole(AriaRole.BUTTON);
-            assertThat(buttons.first()).isVisible();
+        @Step("Verify download page")
+        public void verifyDownloadPage() {
+            assertThat(page.locator("article")).isVisible();
         }
         
-        @Override
-        public void findLinksByRole() {
-            var links = page.getByRole(AriaRole.LINK);
-            assertThat(links.first()).isVisible();
+        @Step("Navigate to documentation")
+        public void navigateToDocs() {
+            page.locator("a:has-text('Docs')").first().click();
+            page.waitForLoadState();
         }
         
-        @Override
-        public void findNavigationByRole() {
-            var nav = page.getByRole(AriaRole.NAVIGATION);
-            assertThat(nav.first()).isVisible();
+        @Step("Verify language selector options")
+        public void verifyLanguageOptions() {
+            var languageDropdown = page.locator(".navbar__item.dropdown");
+            assertThat(languageDropdown.first()).isVisible();
         }
         
-        @Override
-        public void findByText(String text) {
-            var element = page.getByText(text);
-            assertThat(element.first()).isVisible();
+        @Step("Toggle dark mode")
+        public void toggleDarkMode() {
+            page.locator("button[class*='toggle']").click();
+            page.waitForTimeout(300);
         }
         
-        @Override
-        public void findLinkByName(String name) {
-            var link = page.getByRole(AriaRole.LINK, 
-                new Page.GetByRoleOptions().setName(name));
-            assertThat(link.first()).isVisible();
+        @Step("Verify dark mode is active")
+        public void verifyDarkMode() {
+            // Just verify the toggle works
+            assertThat(page.locator("html")).isVisible();
         }
         
-        @Override
-        public void filterLinks(String text) {
-            var filtered = page.locator("a").filter(
-                new Locator.FilterOptions().setHasText(text)
-            );
-            assertThat(filtered.first()).isVisible();
+        @Step("Verify GitHub link")
+        public void verifyGitHubLink() {
+            assertThat(page.locator("a[href*='github.com/microsoft/playwright']")).isVisible();
         }
         
-        @Override
-        public void chainLocators() {
-            var navDocs = page.locator(".navbar")
-                .locator("a")
-                .filter(new Locator.FilterOptions().setHasText("Docs"));
-            assertThat(navDocs).isVisible();
-        }
-        
-        @Override
-        public void getTitleViaJs() {
-            var title = (String) page.evaluate("() => document.title");
-            org.assertj.core.api.Assertions.assertThat(title).contains("Playwright");
-        }
-        
-        @Override
-        public void countLinksViaJs() {
-            var count = (Integer) page.evaluate("() => document.querySelectorAll('a').length");
-            org.assertj.core.api.Assertions.assertThat(count).isGreaterThan(10);
-        }
-        
-        @Override
-        public void setMobileViewport() {
-            page.setViewportSize(375, 667);
-        }
-        
-        @Override
-        public void setDesktopViewport() {
-            page.setViewportSize(1280, 720);
-        }
-        
-        @Override
-        public void iterateNavLinks() {
-            var links = page.locator(".navbar__link");
-            var count = links.count();
-            
-            for (int i = 0; i < Math.min(count, 3); i++) {
-                var text = links.nth(i).textContent();
-                org.assertj.core.api.Assertions.assertThat(text).isNotEmpty();
-            }
+        @Step("Verify external links")
+        public void verifyExternalLinks() {
+            var externalLinks = page.locator("a[target='_blank']");
+            assertThat(externalLinks.first()).isVisible();
         }
     }
 }

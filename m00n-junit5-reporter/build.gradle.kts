@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "io.m00nreport"
-version = "1.0.0"
+version = "1.1.0"
 
 java {
     sourceCompatibility = JavaVersion.VERSION_17
@@ -24,6 +24,10 @@ dependencies {
     compileOnly(platform("org.junit:junit-bom:5.11.3"))
     compileOnly("org.junit.jupiter:junit-jupiter-api")
     compileOnly("org.junit.platform:junit-platform-launcher")
+    
+    // AspectJ for automatic step interception (optional - users enable if needed)
+    compileOnly("org.aspectj:aspectjrt:1.9.22")
+    compileOnly("org.aspectj:aspectjweaver:1.9.22")
     
     // HTTP Client
     implementation("com.squareup.okhttp3:okhttp:4.12.0")

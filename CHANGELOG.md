@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-01-14
+
+### Added
+- **AspectJ-based step tracking** - Automatic `@Step` interception without StepProxy or PageFactory
+- `M00nStepAspect` for load-time weaving of `@Step` annotated methods
+- Zero-boilerplate step tracking - just annotate methods and they're tracked!
+
+### Changed
+- Recommended approach is now AspectJ (simpler, no factory classes needed)
+- Updated documentation to reflect AspectJ-first approach
+- Updated all examples to use concrete classes instead of interfaces
+
+### Deprecated
+- `StepProxy.create()` - still works but AspectJ is recommended
+- Interface-based Page Objects - concrete classes are simpler with AspectJ
+
 ## [1.0.0] - 2026-01-14
 
 ### Added
@@ -16,7 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Step Tracking
 - `@Step` annotation for Page Object methods
-- `StepProxy.create()` for automatic step tracking
+- `StepProxy.create()` for manual step tracking (legacy approach)
 - Steps appear in M00n Report with timing and status
 - Manual step API via `TestResult.addStep()`
 
