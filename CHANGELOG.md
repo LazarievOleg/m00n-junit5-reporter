@@ -7,6 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.3] - 2026-01-14
+
+### Fixed (Code Review Feedback)
+- **DRY: Primitive array formatters** - Extracted common logic into `formatPrimitiveArrayGeneric()` using `IntFunction<String>`, eliminating duplicate code across 8 overloads
+- **Security: setAccessible() handling** - Added graceful handling for Java 17+ module restrictions (`InaccessibleObjectException`), with debug logging instead of silent failures
+- **Robustness: Video filename extraction** - Video attachments now use actual filename from path (e.g., `test-video.webm`) instead of hardcoded `video.webm`
+- **Robustness: Null checks** - Added null check for video path supplier return value to prevent NPE
+- **Robustness: parseRetryInfo null safety** - Returns empty string instead of null displayName to prevent downstream NPEs
+- **Constants: Configurable limits** - Extracted magic numbers to named constants:
+  - `MAX_ARG_LENGTH = 200` - Step argument truncation limit
+  - `MAX_ARRAY_ITEMS = 5` - Array items before truncation
+- **Duplicate artifact prevention** - Added `SCREENSHOT_CAPTURED` and `TRACE_CAPTURED` thread-local flags to prevent duplicate attachments when both M00nExtension and base test classes attempt to capture artifacts
+
+### Added
+- `M00nPlaywright.isScreenshotCaptured()` - Check if screenshot already captured for current test
+- `M00nPlaywright.isTraceCaptured()` - Check if trace already captured for current test
+- `M00nPlaywright.markScreenshotCaptured()` - Mark screenshot as captured (for manual capture)
+- `M00nPlaywright.markTraceCaptured()` - Mark trace as captured (for manual capture)
+
+## [1.2.2] - 2026-01-14
+
+### Added
+- **Automatic Playwright artifact capture** - Screenshots and traces captured on test failure:
+  - Works with ANY custom base test class or extension (no inheritance required!)
+  - Artifacts captured IMMEDIATELY on failure, BEFORE any `@AfterEach` runs
+  - Compatible with custom extensions that close browser in teardown
+- **Zero-config Playwright detection** - No code changes needed!
+  - Auto-detects `Page` and `BrowserContext` fields via reflection
+  - Just add dependency + config file, run tests
+  - Scans class hierarchy (parent classes too)
+- **`PlaywrightTestProvider` interface** - Optional explicit contract:
+  - Implement `getPage()` and `getContext()` if you prefer explicit registration
+  - Useful for wrapper classes like `MainPage`
+- **`M00nPlaywright` utility class** - Alternative manual registration API:
+  - `M00nPlaywright.setPage(page)` - enables screenshot capture on failure
+  - `M00nPlaywright.setContext(context)` - enables trace capture on failure
+  - Uses reflection to avoid compile-time Playwright dependency
+- **`M00nPlaywrightExtension`** - Optional extension for video capture:
+  - Only needed if you want video recording (requires context close first)
+- **`@Step` placeholder support** - Step titles now support parameter placeholders:
+  - `{paramName}` - replaced with parameter value by name (e.g., `@Step("Opening {url}")`)
+  - `{0}`, `{1}`, `{2}` - replaced with parameter value by index
+  - Long strings (>200 chars) are automatically truncated
+  - Arrays are formatted nicely with item count
+- **`@ParameterizedTest` compatibility** - Parameterized tests now work correctly with unique test names
+
+### Fixed
+- **Critical: Incorrect retry count detection** - Fixed bug where parameterized test invocation numbers (e.g., `#599`, `#1599`) were incorrectly interpreted as retry attempts
+- Retry detection now ONLY matches explicit "Attempt N" patterns from JUnit Pioneer's `@RetryingTest`
+- `[test-template-invocation:#N]` patterns in unique IDs are no longer treated as retry indicators
+- Tests without `@RetryingTest` now correctly show retry=0 instead of high invocation numbers
+
 ## [1.2.1] - 2026-01-14
 
 ### Fixed

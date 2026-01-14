@@ -42,9 +42,12 @@ public class M00nExtension implements
     private static final ThreadLocal<Boolean> reportedInCurrentTest = ThreadLocal.withInitial(() -> false);
     
     // Pattern to detect retry attempt from display name
-    // Matches: "Attempt 1", "- Attempt 2", "Test name - Attempt 3", "[2]", "#1", etc.
+    // ONLY matches JUnit Pioneer's @RetryingTest patterns:
+    // - "Attempt 1", "Attempt 2" (explicit attempt indicator)
+    // - "Test name - Attempt 3" (test name with attempt suffix)
+    // NOTE: Does NOT match "[1]", "[2]" or "#1" - these are parameterized test invocations, NOT retries!
     private static final Pattern RETRY_PATTERN = Pattern.compile(
-        "(?:[-–#]\\s*)?(?:Attempt\\s*|\\[#?)(\\d+)\\]?", 
+        "\\bAttempt\\s+(\\d+)", 
         Pattern.CASE_INSENSITIVE
     );
     
@@ -104,6 +107,7 @@ public class M00nExtension implements
         // Always clean up thread-locals
         M00nStep.clearCurrentTest();
         reportedInCurrentTest.remove();
+        M00nPlaywright.clear();  // Clean up Playwright registrations
     }
     
     /**
@@ -130,6 +134,10 @@ public class M00nExtension implements
     
     /**
      * Common test interception logic for both regular tests and test templates.
+     * 
+     * IMPORTANT: Captures Playwright artifacts IMMEDIATELY on failure,
+     * BEFORE re-throwing the exception. This ensures capture happens before
+     * any @AfterEach or other extensions that might close the browser context.
      */
     private void interceptTest(Invocation<Void> invocation, ExtensionContext extensionContext) throws Throwable {
         TestResult testResult = getTestResultSafely(extensionContext);
@@ -145,12 +153,191 @@ public class M00nExtension implements
             // Test passed - report immediately
             reportTestResult(extensionContext, "passed", null);
         } catch (Throwable t) {
-            // Mark test as failed for screenshot capture in @AfterEach
+            // Mark test as failed
             M00nStep.markFailed();
+            
+            // CAPTURE PLAYWRIGHT ARTIFACTS IMMEDIATELY - before any @AfterEach runs!
+            // This is critical when customers have their own extensions that close the context
+            capturePlaywrightArtifacts(testResult, extensionContext);
+            
             // Test failed - report immediately (before JUnit Pioneer catches for retry)
             reportTestResult(extensionContext, "failed", t);
             throw t; // Re-throw so JUnit Pioneer can handle retry
         }
+    }
+    
+    /**
+     * Capture Playwright artifacts (screenshot, trace) immediately on failure.
+     * 
+     * First checks if test implements PlaywrightTestProvider for auto-registration,
+     * then falls back to manual M00nPlaywright.setPage() registration.
+     * 
+     * This runs BEFORE @AfterEach, so the browser is still open.
+     */
+    private void capturePlaywrightArtifacts(TestResult testResult, ExtensionContext context) {
+        if (testResult == null) return;
+        
+        String testId = testResult.getTestId();
+        String testName = sanitizeFilename(context.getDisplayName());
+        
+        // Auto-register from PlaywrightTestProvider if test implements it
+        // This allows customers to implement the interface instead of calling M00nPlaywright.setPage()
+        autoRegisterFromProvider(context);
+        
+        // Capture screenshot first (before any state changes)
+        if (M00nPlaywright.hasPage()) {
+            log.debug("[M00nExtension] Capturing Playwright artifacts for: {}", testName);
+            M00nPlaywright.captureScreenshot(testId);
+            
+            // Capture trace if context was registered
+            if (M00nPlaywright.hasContext()) {
+                M00nPlaywright.captureTrace(testId, testName);
+            }
+        }
+    }
+    
+    /**
+     * Auto-register Playwright objects for artifact capture.
+     * 
+     * Priority order:
+     * 1. Manual registration via M00nPlaywright.setPage() - highest priority
+     * 2. PlaywrightTestProvider interface - explicit contract
+     * 3. Auto-detection via reflection - zero-config fallback
+     * 
+     * This enables ZERO code changes for customers - just add dependency + config!
+     */
+    private void autoRegisterFromProvider(ExtensionContext context) {
+        // Already registered manually? Skip auto-detection
+        if (M00nPlaywright.hasPage()) {
+            return;
+        }
+        
+        try {
+            Object testInstance = context.getRequiredTestInstance();
+            
+            // Priority 1: Check if test implements PlaywrightTestProvider
+            if (testInstance instanceof PlaywrightTestProvider provider) {
+                Object page = provider.getPage();
+                if (page != null) {
+                    M00nPlaywright.setPage(page);
+                    log.debug("[M00nExtension] Auto-registered Page from PlaywrightTestProvider");
+                }
+                
+                if (!M00nPlaywright.hasContext()) {
+                    Object browserContext = provider.getContext();
+                    if (browserContext != null) {
+                        M00nPlaywright.setContext(browserContext);
+                        log.debug("[M00nExtension] Auto-registered Context from PlaywrightTestProvider");
+                    }
+                }
+                return;
+            }
+            
+            // Priority 2: Auto-detect Playwright fields via reflection (ZERO-CONFIG!)
+            autoDetectPlaywrightFields(testInstance);
+            
+        } catch (Exception e) {
+            log.debug("[M00nExtension] Could not auto-register Playwright: {}", e.getMessage());
+        }
+    }
+    
+    /**
+     * Auto-detect Playwright Page and BrowserContext fields via reflection.
+     * This enables ZERO code changes for customers migrating from other reporters.
+     * 
+     * Scans test instance (and parent classes) for fields of type:
+     * - com.microsoft.playwright.Page
+     * - com.microsoft.playwright.BrowserContext
+     */
+    private void autoDetectPlaywrightFields(Object testInstance) {
+        Class<?> clazz = testInstance.getClass();
+        
+        // Scan class hierarchy (including parent classes)
+        while (clazz != null && clazz != Object.class) {
+            for (var field : clazz.getDeclaredFields()) {
+                try {
+                    // Handle Java 17+ module restrictions gracefully
+                    try {
+                        field.setAccessible(true);
+                    } catch (RuntimeException e) {
+                        // InaccessibleObjectException (Java 9+) or SecurityException
+                        log.debug("[M00nExtension] Cannot access field {} (module restrictions): {}", 
+                            field.getName(), e.getMessage());
+                        continue;
+                    }
+                    
+                    Object value = field.get(testInstance);
+                    
+                    if (value == null) continue;
+                    
+                    String typeName = value.getClass().getName();
+                    
+                    // Detect Playwright Page (including impl class)
+                    if (!M00nPlaywright.hasPage() && isPlaywrightPage(value, typeName)) {
+                        M00nPlaywright.setPage(value);
+                        log.debug("[M00nExtension] Auto-detected Page field: {}.{}", 
+                            clazz.getSimpleName(), field.getName());
+                    }
+                    
+                    // Detect Playwright BrowserContext
+                    if (!M00nPlaywright.hasContext() && isPlaywrightContext(value, typeName)) {
+                        M00nPlaywright.setContext(value);
+                        log.debug("[M00nExtension] Auto-detected BrowserContext field: {}.{}", 
+                            clazz.getSimpleName(), field.getName());
+                    }
+                    
+                } catch (Exception e) {
+                    // Skip inaccessible fields
+                    log.debug("[M00nExtension] Error accessing field {}: {}", field.getName(), e.getMessage());
+                }
+            }
+            clazz = clazz.getSuperclass();
+        }
+    }
+    
+    /**
+     * Check if object is a Playwright Page (handles impl classes and wrappers).
+     */
+    private boolean isPlaywrightPage(Object obj, String typeName) {
+        // Direct Page implementation
+        if (typeName.contains("playwright") && typeName.contains("Page")) {
+            return true;
+        }
+        
+        // Check interfaces
+        for (Class<?> iface : obj.getClass().getInterfaces()) {
+            if (iface.getName().equals("com.microsoft.playwright.Page")) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+    
+    /**
+     * Check if object is a Playwright BrowserContext.
+     */
+    private boolean isPlaywrightContext(Object obj, String typeName) {
+        // Direct BrowserContext implementation
+        if (typeName.contains("playwright") && typeName.contains("BrowserContext")) {
+            return true;
+        }
+        
+        // Check interfaces
+        for (Class<?> iface : obj.getClass().getInterfaces()) {
+            if (iface.getName().equals("com.microsoft.playwright.BrowserContext")) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+    
+    private String sanitizeFilename(String name) {
+        if (name == null) return "unknown";
+        String sanitized = name.replaceAll("[^a-zA-Z0-9-_]", "_")
+                               .replaceAll("_+", "_");
+        return sanitized.substring(0, Math.min(sanitized.length(), 100));
     }
     
     /**
@@ -364,11 +551,12 @@ public class M00nExtension implements
     
     /**
      * Parses retry information from test display name.
-     * Handles patterns like "Attempt 1", "Attempt 2", "Test name [2]", etc.
+     * Only matches JUnit Pioneer's @RetryingTest "Attempt N" pattern.
+     * Does NOT match parameterized test patterns like "[1]" or "#1".
      */
     private RetryInfo parseRetryInfo(String displayName) {
         if (displayName == null || displayName.isEmpty()) {
-            return new RetryInfo(displayName, 0);
+            return new RetryInfo("", 0);  // Empty string instead of null to avoid NPE
         }
         
         Matcher matcher = RETRY_PATTERN.matcher(displayName);
@@ -392,50 +580,32 @@ public class M00nExtension implements
     
     /**
      * Gets retry attempt from extension context.
-     * JUnit Pioneer stores retry info in the unique ID and display name.
+     * 
+     * IMPORTANT: Only JUnit Pioneer's @RetryingTest creates actual retries.
+     * Other test templates (@ParameterizedTest, @RepeatedTest) use invocation numbers
+     * that are NOT retries and should NOT be counted.
+     * 
+     * JUnit Pioneer's @RetryingTest default display name includes "Attempt N":
+     * - "Attempt 1", "Attempt 2", etc.
+     * - Or custom: "My Test - Attempt 3"
+     * 
+     * We ONLY detect retries from the explicit "Attempt N" pattern in display names.
      */
     private int getRetryAttemptFromContext(ExtensionContext context) {
         String displayName = context.getDisplayName();
-        String uniqueId = context.getUniqueId();
         
-        log.debug("[M00nExtension] getRetryAttemptFromContext - displayName='{}', uniqueId='{}'", 
-            displayName, uniqueId);
+        log.debug("[M00nExtension] getRetryAttemptFromContext - displayName='{}'", displayName);
         
-        // Method 1: Parse from display name (works for @RetryingTest with name="... Attempt {index}")
+        // Only parse "Attempt N" from display name - this is JUnit Pioneer's @RetryingTest pattern
+        // Do NOT use unique ID patterns like [test-template-invocation:#N] - those are 
+        // sequential invocation counters for ALL test templates, not retry indicators!
         RetryInfo info = parseRetryInfo(displayName);
         if (info.attempt > 0) {
-            log.debug("[M00nExtension] Found attempt {} from displayName", info.attempt);
+            log.debug("[M00nExtension] Found retry attempt {} from displayName", info.attempt);
             return info.attempt;
         }
         
-        // Method 2: Check unique ID for retry info (JUnit Pioneer pattern)
-        // Pattern: [test-template-invocation:#1] or similar
-        Matcher idMatcher = Pattern.compile("\\[test-template-invocation:#(\\d+)\\]").matcher(uniqueId);
-        if (idMatcher.find()) {
-            int attempt = Integer.parseInt(idMatcher.group(1));
-            log.debug("[M00nExtension] Found attempt {} from uniqueId", attempt);
-            return attempt;
-        }
-        
-        // Method 3: Check for repetition index pattern in uniqueId
-        // Pattern: [repetition-index:1] or similar  
-        Matcher repMatcher = Pattern.compile("\\[(?:repetition|invocation)[-_]?(?:index)?[:#](\\d+)\\]", 
-            Pattern.CASE_INSENSITIVE).matcher(uniqueId);
-        if (repMatcher.find()) {
-            int attempt = Integer.parseInt(repMatcher.group(1));
-            log.debug("[M00nExtension] Found attempt {} from repetition pattern in uniqueId", attempt);
-            return attempt;
-        }
-        
-        // Method 4: Just look for any number pattern after "Attempt" in display name
-        Matcher simpleAttempt = Pattern.compile("Attempt\\s*(\\d+)", Pattern.CASE_INSENSITIVE).matcher(displayName);
-        if (simpleAttempt.find()) {
-            int attempt = Integer.parseInt(simpleAttempt.group(1));
-            log.debug("[M00nExtension] Found attempt {} from simple Attempt pattern", attempt);
-            return attempt;
-        }
-        
-        log.debug("[M00nExtension] No retry attempt detected, returning 0");
+        log.debug("[M00nExtension] No retry attempt detected (not @RetryingTest), returning 0");
         return 0;
     }
     
