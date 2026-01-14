@@ -490,35 +490,45 @@ public class M00nExtension implements
     }
     
     /**
-     * Gets the test display name from @DisplayName on method or method name.
+     * Gets the test display name from @DisplayName on method or context display name.
      * For @RetryingTest, extracts the base name by stripping the attempt suffix.
+     * For @ParameterizedTest, uses the full context display name (includes parameters).
      */
     private String getTestDisplayName(ExtensionContext context) {
         try {
             var method = context.getRequiredTestMethod();
             
-            // Check for @DisplayName on method
+            // Check for @DisplayName on method (highest priority)
             DisplayName displayName = method.getAnnotation(DisplayName.class);
             if (displayName != null && !displayName.value().isEmpty()) {
                 return displayName.value();
             }
             
-            // For @RetryingTest, context.getDisplayName() contains the template
-            // e.g., "🔄 Flaky test - Attempt 1"
-            // We need to strip the attempt suffix to get the base test name
+            // Use context.getDisplayName() for all other cases
+            // This correctly handles:
+            // - @ParameterizedTest: "1: Test name with params [value1] [value2]"
+            // - @RepeatedTest: "repetition 1 of 5"
+            // - Regular tests: method name or custom display name
             String contextDisplayName = context.getDisplayName();
-            if (contextDisplayName != null && RETRY_PATTERN.matcher(contextDisplayName).find()) {
-                // Strip the attempt part: "🔄 Flaky test - Attempt 1" -> "🔄 Flaky test"
-                String baseName = RETRY_PATTERN.matcher(contextDisplayName)
-                    .replaceAll("")
-                    .replaceAll("\\s*[-–]\\s*$", "")  // Remove trailing dashes
-                    .trim();
-                if (!baseName.isEmpty()) {
-                    return baseName;
+            
+            if (contextDisplayName != null && !contextDisplayName.isEmpty()) {
+                // For @RetryingTest, strip the attempt suffix
+                // e.g., "🔄 Flaky test - Attempt 1" -> "🔄 Flaky test"
+                if (RETRY_PATTERN.matcher(contextDisplayName).find()) {
+                    String baseName = RETRY_PATTERN.matcher(contextDisplayName)
+                        .replaceAll("")
+                        .replaceAll("\\s*[-–]\\s*$", "")  // Remove trailing dashes
+                        .trim();
+                    if (!baseName.isEmpty()) {
+                        return baseName;
+                    }
                 }
+                
+                // Return context display name as-is (includes parameterized test info)
+                return contextDisplayName;
             }
             
-            // Fallback to method name (humanized)
+            // Ultimate fallback to method name (humanized)
             return humanizeMethodName(method.getName());
         } catch (Exception e) {
             // Fallback to context display name

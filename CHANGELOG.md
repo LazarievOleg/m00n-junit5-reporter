@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.4] - 2026-01-14
+
+### Fixed
+- **Critical: @ParameterizedTest name mismatch** - Fixed bug where parameterized tests would show "No active test found" and stay in "RUNNING" state forever
+  - Root cause: `getTestDisplayName()` was falling back to method name instead of using `context.getDisplayName()` which includes parameter values
+  - Now correctly uses context display name for @ParameterizedTest, @RepeatedTest, and all test templates
+  - Example: `"1: Test with params [value1] [value2]"` now matches correctly between start and complete
+
 ## [1.2.3] - 2026-01-14
 
 ### Fixed (Code Review Feedback)
