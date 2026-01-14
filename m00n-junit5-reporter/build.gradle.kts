@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "io.m00nreport"
-version = "1.1.0"
+version = "1.2.0"
 
 java {
     sourceCompatibility = JavaVersion.VERSION_17
@@ -25,8 +25,10 @@ dependencies {
     compileOnly("org.junit.jupiter:junit-jupiter-api")
     compileOnly("org.junit.platform:junit-platform-launcher")
     
-    // AspectJ for automatic step interception (optional - users enable if needed)
-    compileOnly("org.aspectj:aspectjrt:1.9.22")
+    // AspectJ Runtime - included transitively for @Step support
+    api("org.aspectj:aspectjrt:1.9.22")
+    
+    // AspectJ Weaver - users must add this + javaagent for automatic step tracking
     compileOnly("org.aspectj:aspectjweaver:1.9.22")
     
     // HTTP Client

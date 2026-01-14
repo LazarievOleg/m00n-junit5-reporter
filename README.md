@@ -27,11 +27,8 @@ repositories {
 }
 
 dependencies {
-    // M00n Playwright JUnit 5 Reporter
-    implementation("io.m00nreport:m00n-junit5-reporter:1.0.0")
-    
-    // AspectJ for automatic step interception
-    implementation("org.aspectj:aspectjrt:1.9.22")
+    // M00n Playwright JUnit 5 Reporter (includes AspectJ runtime)
+    implementation("io.m00nreport:m00n-junit5-reporter:1.2.0")
     
     // JUnit 5
     testImplementation("org.junit.jupiter:junit-jupiter:5.11.3")
@@ -40,7 +37,7 @@ dependencies {
     implementation("com.microsoft.playwright:playwright:1.48.0")
 }
 
-// AspectJ configuration for automatic @Step tracking
+// AspectJ Weaver for automatic @Step tracking
 val aspectjWeaverConfig by configurations.creating {
     isCanBeConsumed = false
     isCanBeResolved = true
@@ -53,7 +50,7 @@ dependencies {
 tasks.test {
     useJUnitPlatform()
     
-    // Enable AspectJ agent for automatic step tracking
+    // Enable AspectJ agent
     doFirst {
         val aspectjWeaver = aspectjWeaverConfig.singleFile
         jvmArgs("-javaagent:${aspectjWeaver.absolutePath}")
@@ -77,22 +74,35 @@ Create `src/test/resources/junit-platform.properties`:
 junit.jupiter.extensions.autodetection.enabled=true
 ```
 
-Create `src/test/resources/META-INF/aop.xml`:
+**That's it!** No `aop.xml` needed - it's bundled in the reporter.
 
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<aspectj>
-    <aspects>
-        <aspect name="com.m00nreport.reporter.M00nStepAspect"/>
-    </aspects>
-    <weaver options="-verbose">
-        <include within="com.yourpackage..*"/>
-        <include within="com.m00nreport.reporter..*"/>
-    </weaver>
-</aspectj>
+### 3. Use @Step in Your Code
+
+```java
+import com.m00nreport.reporter.annotations.Step;
+
+public class LoginPage {
+    private final Page page;
+    
+    public LoginPage(Page page) {
+        this.page = page;
+    }
+    
+    @Step("Open login page")
+    public void open() {
+        page.navigate("https://example.com/login");
+    }
+    
+    @Step("Login with username")
+    public void login(String username, String password) {
+        page.locator("#username").fill(username);
+        page.locator("#password").fill(password);
+        page.locator("button[type='submit']").click();
+    }
+}
 ```
 
-### 3. Run Tests
+### 4. Run Tests
 
 ```bash
 ./gradlew test
@@ -104,7 +114,6 @@ Results stream to M00n Report in real-time! 🎉
 
 See the [full documentation](m00n-junit5-reporter/README.md) for:
 
-- **AspectJ integration** for automatic step tracking
 - **Page Object pattern** with `@Step` annotation
 - **BasePlaywrightTest class** for automatic screenshot/video/trace capture
 - **Retry support** with JUnit Pioneer's `@RetryingTest`
