@@ -1,0 +1,102 @@
+# ===========================================
+# Gradle
+# ===========================================
+.gradle/
+build/
+**/build/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/**/build/
+
+# Gradle local properties
+local.properties
+
+# ===========================================
+# IDE
+# ===========================================
+# IntelliJ IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+
+# Eclipse
+.classpath
+.project
+.settings/
+bin/
+
+# VS Code
+.vscode/
+
+# NetBeans
+nb-configuration.xml
+nbproject/
+
+# ===========================================
+# Compiled Files
+# ===========================================
+*.class
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+# ===========================================
+# Logs & Test Output
+# ===========================================
+*.log
+test-results/
+playwright-report/
+traces/
+videos/
+screenshots/
+test-output/
+surefire-reports/
+failsafe-reports/
+
+# ===========================================
+# OS Files
+# ===========================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ===========================================
+# M00n Configuration (contains API keys)
+# ===========================================
+m00n.properties
+!m00n.properties.example
+
+# ===========================================
+# Temporary Files
+# ===========================================
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+\#*\#
+
+# ===========================================
+# Package Manager
+# ===========================================
+node_modules/
+package-lock.json
+yarn.lock
+
+# ===========================================
+# GPG Signing (for Maven Central)
+# ===========================================
+*.gpg
+secring.gpg
+pubring.gpg
