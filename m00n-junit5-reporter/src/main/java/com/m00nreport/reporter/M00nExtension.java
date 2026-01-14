@@ -104,10 +104,11 @@ public class M00nExtension implements
     
     @Override
     public void afterEach(ExtensionContext context) {
-        // Always clean up thread-locals
+        // Clean up thread-locals EXCEPT reportedInCurrentTest
+        // (TestWatcher callbacks run AFTER afterEach and need this flag)
         M00nStep.clearCurrentTest();
-        reportedInCurrentTest.remove();
         M00nPlaywright.clear();  // Clean up Playwright registrations
+        // NOTE: reportedInCurrentTest is cleared in beforeEach, not here
     }
     
     /**
