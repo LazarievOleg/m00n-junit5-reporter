@@ -88,8 +88,10 @@ public final class M00nPlaywright {
     private static final ThreadLocal<Boolean> TRACE_CAPTURED = ThreadLocal.withInitial(() -> false);
     
     // Video capture state (for custom extensions)
-    private static final ThreadLocal<Path> SAVED_VIDEO_PATH = new ThreadLocal<>();
+    // Store the Video object itself for reliable saveAs() call after close
+    private static final ThreadLocal<Object> SAVED_VIDEO_OBJECT = new ThreadLocal<>();
     private static final ThreadLocal<String> SAVED_TEST_ID = new ThreadLocal<>();
+    private static final ThreadLocal<Path> SAVED_VIDEO_DIR = new ThreadLocal<>();
     
     private M00nPlaywright() {} // Utility class
     
@@ -148,7 +150,7 @@ public final class M00nPlaywright {
         VIDEO_PATH_SUPPLIER.remove();
         SCREENSHOT_CAPTURED.remove();
         TRACE_CAPTURED.remove();
-        // Note: SAVED_VIDEO_PATH and SAVED_TEST_ID are NOT cleared here
+        // Note: SAVED_VIDEO_OBJECT, SAVED_TEST_ID, SAVED_VIDEO_DIR are NOT cleared here
         // They are cleared in captureVideoAfterClose() after video is captured
     }
     
@@ -157,11 +159,11 @@ public final class M00nPlaywright {
     // =========================================================================
     
     /**
-     * Prepare video capture by saving the video path BEFORE closing page/context.
+     * Prepare video capture by saving the Video object BEFORE closing page/context.
      * 
      * <p>Call this in your custom extension's afterEach(), BEFORE closing the page.
      * The video file is only finalized when the context is closed, but we need
-     * to save the path while the page is still valid.</p>
+     * to save the Video object reference while the page is still valid.</p>
      * 
      * <h2>Usage in Custom Extension:</h2>
      * <pre>{@code
@@ -182,46 +184,63 @@ public final class M00nPlaywright {
      * @param page The Playwright Page object (must have video recording enabled)
      */
     public static void prepareVideoCapture(Object page) {
-        if (page == null) return;
+        if (page == null) {
+            log.debug("[M00nPlaywright] prepareVideoCapture: page is null");
+            return;
+        }
         
         // Only prepare if test failed
         if (!M00nStep.isCurrentTestFailed()) {
+            log.debug("[M00nPlaywright] prepareVideoCapture: test did not fail, skipping");
             return;
         }
         
         try {
-            // Get video path using reflection
+            // Get Video object using reflection
             var pageClass = Class.forName("com.microsoft.playwright.Page");
             var videoMethod = pageClass.getMethod("video");
             Object video = videoMethod.invoke(page);
             
-            if (video != null) {
-                var videoClass = Class.forName("com.microsoft.playwright.Video");
-                var pathMethod = videoClass.getMethod("path");
-                Path videoPath = (Path) pathMethod.invoke(video);
-                
-                if (videoPath != null) {
-                    SAVED_VIDEO_PATH.set(videoPath);
-                    
-                    // Save test ID for later
-                    String testId = M00nStep.current()
-                        .map(result -> {
-                            try {
-                                return (String) result.getClass().getMethod("getTestId").invoke(result);
-                            } catch (Exception e) {
-                                return null;
-                            }
-                        })
-                        .orElse(null);
-                    
-                    if (testId != null) {
-                        SAVED_TEST_ID.set(testId);
-                        log.debug("[M00nPlaywright] Video path saved for capture: {}", videoPath);
-                    }
-                }
+            if (video == null) {
+                log.debug("[M00nPlaywright] prepareVideoCapture: page.video() returned null - video recording not enabled?");
+                return;
             }
+            
+            // Save the Video object for later (to call saveAs after context close)
+            SAVED_VIDEO_OBJECT.set(video);
+            
+            // Also save the video directory for fallback path resolution
+            var videoClass = Class.forName("com.microsoft.playwright.Video");
+            var pathMethod = videoClass.getMethod("path");
+            Path videoPath = (Path) pathMethod.invoke(video);
+            if (videoPath != null && videoPath.getParent() != null) {
+                SAVED_VIDEO_DIR.set(videoPath.getParent());
+            }
+            
+            // Save test ID for later
+            String testId = M00nStep.current()
+                .map(result -> {
+                    try {
+                        return (String) result.getClass().getMethod("getTestId").invoke(result);
+                    } catch (Exception e) {
+                        return null;
+                    }
+                })
+                .orElse(null);
+            
+            if (testId != null) {
+                SAVED_TEST_ID.set(testId);
+                log.debug("[M00nPlaywright] Video object saved for capture, testId: {}, path: {}", testId, videoPath);
+            } else {
+                log.warn("[M00nPlaywright] prepareVideoCapture: could not get testId from current test");
+                // Clear video object since we can't upload without testId
+                SAVED_VIDEO_OBJECT.remove();
+                SAVED_VIDEO_DIR.remove();
+            }
+        } catch (ClassNotFoundException e) {
+            log.debug("[M00nPlaywright] Playwright not on classpath: {}", e.getMessage());
         } catch (Exception e) {
-            log.debug("[M00nPlaywright] Video not available: {}", e.getMessage());
+            log.warn("[M00nPlaywright] prepareVideoCapture failed: {}", e.getMessage());
         }
     }
     
@@ -229,25 +248,87 @@ public final class M00nPlaywright {
      * Capture video AFTER context is closed and upload to M00n Reporter.
      * 
      * <p>Call this in your custom extension's afterEach(), AFTER closing the context.
-     * The video file is only finalized when the context is closed.</p>
+     * Uses Playwright's Video.saveAs() which properly blocks until video is finalized.</p>
      * 
      * <p>Must be paired with {@link #prepareVideoCapture(Object)} called before closing.</p>
      * 
      * @return true if video was captured and uploaded successfully
      */
     public static boolean captureVideoAfterClose() {
-        Path videoPath = SAVED_VIDEO_PATH.get();
+        Object video = SAVED_VIDEO_OBJECT.get();
         String testId = SAVED_TEST_ID.get();
+        Path videoDir = SAVED_VIDEO_DIR.get();
         
         // Clear saved state
-        SAVED_VIDEO_PATH.remove();
+        SAVED_VIDEO_OBJECT.remove();
         SAVED_TEST_ID.remove();
+        SAVED_VIDEO_DIR.remove();
         
-        if (videoPath == null || testId == null) {
+        if (video == null || testId == null) {
+            log.debug("[M00nPlaywright] captureVideoAfterClose: no video ({}) or testId ({}) saved", 
+                video != null ? "present" : "null", 
+                testId != null ? testId : "null");
             return false;
         }
         
-        return captureVideoFromPath(testId, videoPath);
+        try {
+            // Use Video.saveAs() - this blocks until video is fully written
+            var videoClass = Class.forName("com.microsoft.playwright.Video");
+            var saveAsMethod = videoClass.getMethod("saveAs", Path.class);
+            
+            // Create temp file for video
+            Path targetDir = videoDir != null ? videoDir : Path.of(System.getProperty("java.io.tmpdir"));
+            Path targetPath = targetDir.resolve("m00n-video-" + System.currentTimeMillis() + ".webm");
+            
+            log.debug("[M00nPlaywright] Calling Video.saveAs({})...", targetPath);
+            
+            // This call blocks until video is finalized - no polling needed!
+            saveAsMethod.invoke(video, targetPath);
+            
+            log.debug("[M00nPlaywright] Video.saveAs() completed");
+            
+            // Verify file exists and has content
+            if (!Files.exists(targetPath)) {
+                log.warn("[M00nPlaywright] Video.saveAs() completed but file doesn't exist: {}", targetPath);
+                return false;
+            }
+            
+            long fileSize = Files.size(targetPath);
+            if (fileSize == 0) {
+                log.warn("[M00nPlaywright] Video file is empty: {}", targetPath);
+                Files.deleteIfExists(targetPath);
+                return false;
+            }
+            
+            // Read and upload
+            byte[] videoBytes = Files.readAllBytes(targetPath);
+            String filename = targetPath.getFileName().toString();
+            
+            M00nReporter.getInstance().attachToTest(testId,
+                AttachmentData.video(filename, videoBytes));
+            
+            log.info("[M00nPlaywright] ✓ Video captured via saveAs ({} KB)", videoBytes.length / 1024);
+            
+            // Clean up temp file
+            try {
+                Files.deleteIfExists(targetPath);
+            } catch (Exception e) {
+                log.debug("[M00nPlaywright] Could not delete temp video file: {}", e.getMessage());
+            }
+            
+            return true;
+            
+        } catch (Exception e) {
+            String errorMsg = e.getCause() != null ? e.getCause().getMessage() : e.getMessage();
+            log.warn("[M00nPlaywright] Video capture failed: {}", errorMsg);
+            
+            // Log more details for debugging
+            if (log.isDebugEnabled()) {
+                log.debug("[M00nPlaywright] Video capture exception details", e);
+            }
+            
+            return false;
+        }
     }
     
     // =========================================================================
