@@ -74,7 +74,7 @@ public final class M00nPlaywright {
     private static final Logger log = LoggerFactory.getLogger(M00nPlaywright.class);
     
     // Configuration
-    private static final int VIDEO_FINALIZE_TIMEOUT_MS = 2000;
+    private static final int VIDEO_FINALIZE_TIMEOUT_MS = 10000;  // 10 seconds for video to finalize
     private static final int VIDEO_POLL_INTERVAL_MS = 100;
     
     // Thread-local storage for Playwright objects
