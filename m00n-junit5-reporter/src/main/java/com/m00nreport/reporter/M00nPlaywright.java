@@ -219,6 +219,8 @@ public final class M00nPlaywright {
         try {
             // Use reflection to call page.screenshot()
             // This avoids requiring Playwright as a compile dependency
+            // IMPORTANT: Use interface classes, NOT implementation classes (PageImpl)
+            // to avoid Java module access restrictions
             var screenshotOptionsClass = Class.forName("com.microsoft.playwright.Page$ScreenshotOptions");
             var screenshotOptions = screenshotOptionsClass.getDeclaredConstructor().newInstance();
             
@@ -226,8 +228,9 @@ public final class M00nPlaywright {
             var setFullPageMethod = screenshotOptionsClass.getMethod("setFullPage", boolean.class);
             setFullPageMethod.invoke(screenshotOptions, true);
             
-            // Call page.screenshot(options)
-            var screenshotMethod = page.getClass().getMethod("screenshot", screenshotOptionsClass);
+            // Call page.screenshot(options) using Page interface
+            var pageClass = Class.forName("com.microsoft.playwright.Page");
+            var screenshotMethod = pageClass.getMethod("screenshot", screenshotOptionsClass);
             byte[] screenshot = (byte[]) screenshotMethod.invoke(page, screenshotOptions);
             
             if (screenshot != null && screenshot.length > 0) {
@@ -269,7 +272,10 @@ public final class M00nPlaywright {
             }
             
             // Use reflection to call context.tracing().stop(options)
-            var tracingMethod = context.getClass().getMethod("tracing");
+            // IMPORTANT: Use interface classes, NOT implementation classes (BrowserContextImpl)
+            // to avoid Java module access restrictions
+            var browserContextClass = Class.forName("com.microsoft.playwright.BrowserContext");
+            var tracingMethod = browserContextClass.getMethod("tracing");
             Object tracing = tracingMethod.invoke(context);
             
             var stopOptionsClass = Class.forName("com.microsoft.playwright.Tracing$StopOptions");
@@ -277,7 +283,9 @@ public final class M00nPlaywright {
             var setPathMethod = stopOptionsClass.getMethod("setPath", Path.class);
             setPathMethod.invoke(stopOptions, tracePath);
             
-            var stopMethod = tracing.getClass().getMethod("stop", stopOptionsClass);
+            // Use Tracing interface, not TracingImpl
+            var tracingClass = Class.forName("com.microsoft.playwright.Tracing");
+            var stopMethod = tracingClass.getMethod("stop", stopOptionsClass);
             stopMethod.invoke(tracing, stopOptions);
             
             if (Files.exists(tracePath)) {
@@ -309,13 +317,16 @@ public final class M00nPlaywright {
         Supplier<Path> supplier = VIDEO_PATH_SUPPLIER.get();
         if (supplier == null) {
             // Try to get video path from page
+            // IMPORTANT: Use interface classes to avoid Java module access restrictions
             Object page = CURRENT_PAGE.get();
             if (page != null) {
                 try {
-                    var videoMethod = page.getClass().getMethod("video");
+                    var pageClass = Class.forName("com.microsoft.playwright.Page");
+                    var videoMethod = pageClass.getMethod("video");
                     Object video = videoMethod.invoke(page);
                     if (video != null) {
-                        var pathMethod = video.getClass().getMethod("path");
+                        var videoClass = Class.forName("com.microsoft.playwright.Video");
+                        var pathMethod = videoClass.getMethod("path");
                         Path videoPath = (Path) pathMethod.invoke(video);
                         if (videoPath != null) {
                             return captureVideoFromPath(testId, videoPath);
@@ -422,7 +433,9 @@ public final class M00nPlaywright {
         if (context == null) return;
         
         try {
-            var closeMethod = context.getClass().getMethod("close");
+            // Use interface class to avoid Java module access restrictions
+            var browserContextClass = Class.forName("com.microsoft.playwright.BrowserContext");
+            var closeMethod = browserContextClass.getMethod("close");
             closeMethod.invoke(context);
         } catch (Exception e) {
             log.debug("[M00nPlaywright] Failed to close context: {}", e.getMessage());

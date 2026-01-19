@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "io.m00nreport"
-version = "1.2.4"
+version = "1.2.5"
 
 java {
     sourceCompatibility = JavaVersion.VERSION_17
@@ -85,7 +85,7 @@ publishing {
                 developers {
                     developer {
                         id.set("m00nreport")
-                        name.set("M00n Report Team")
+                        name.set("M00N Team")
                         email.set("support@m00nreport.io")
                     }
                 }
