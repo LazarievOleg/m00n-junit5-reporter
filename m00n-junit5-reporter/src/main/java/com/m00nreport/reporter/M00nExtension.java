@@ -498,10 +498,14 @@ public class M00nExtension implements
     private String getTestDisplayName(ExtensionContext context) {
         try {
             var method = context.getRequiredTestMethod();
+            String uniqueId = context.getUniqueId();
+            boolean isTestTemplate = uniqueId.contains("test-template-invocation");
             
-            // Check for @DisplayName on method (highest priority)
+            // Check for @DisplayName on method
+            // BUT: For test templates (parameterized/repeated), we MUST use context display name
+            // to get the unique invocation name including parameters/index
             DisplayName displayName = method.getAnnotation(DisplayName.class);
-            if (displayName != null && !displayName.value().isEmpty()) {
+            if (displayName != null && !displayName.value().isEmpty() && !isTestTemplate) {
                 return displayName.value();
             }
             

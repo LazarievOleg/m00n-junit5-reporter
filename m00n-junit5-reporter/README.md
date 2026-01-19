@@ -608,5 +608,5 @@ MIT License - See [LICENSE](LICENSE) for details.
 ## 🔗 Links
 
 - [M00n Report Dashboard](https://app.m00n.report)
-- [Documentation](https://docs.m00n.report)
+- [Documentation](https://app.m00n.report/documentation)
 - [Issue Tracker](https://github.com/m00nsolutions/m00nreport/issues)
