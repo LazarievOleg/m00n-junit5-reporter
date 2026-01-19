@@ -87,6 +87,10 @@ public final class M00nPlaywright {
     private static final ThreadLocal<Boolean> SCREENSHOT_CAPTURED = ThreadLocal.withInitial(() -> false);
     private static final ThreadLocal<Boolean> TRACE_CAPTURED = ThreadLocal.withInitial(() -> false);
     
+    // Video capture state (for custom extensions)
+    private static final ThreadLocal<Path> SAVED_VIDEO_PATH = new ThreadLocal<>();
+    private static final ThreadLocal<String> SAVED_TEST_ID = new ThreadLocal<>();
+    
     private M00nPlaywright() {} // Utility class
     
     // =========================================================================
@@ -135,6 +139,7 @@ public final class M00nPlaywright {
     
     /**
      * Clear all registrations. Called automatically by M00nExtension.
+     * Note: Video path is preserved for capture after context close.
      */
     public static void clear() {
         CURRENT_PAGE.remove();
@@ -143,6 +148,106 @@ public final class M00nPlaywright {
         VIDEO_PATH_SUPPLIER.remove();
         SCREENSHOT_CAPTURED.remove();
         TRACE_CAPTURED.remove();
+        // Note: SAVED_VIDEO_PATH and SAVED_TEST_ID are NOT cleared here
+        // They are cleared in captureVideoAfterClose() after video is captured
+    }
+    
+    // =========================================================================
+    // Video Capture API - For custom Playwright extensions
+    // =========================================================================
+    
+    /**
+     * Prepare video capture by saving the video path BEFORE closing page/context.
+     * 
+     * <p>Call this in your custom extension's afterEach(), BEFORE closing the page.
+     * The video file is only finalized when the context is closed, but we need
+     * to save the path while the page is still valid.</p>
+     * 
+     * <h2>Usage in Custom Extension:</h2>
+     * <pre>{@code
+     * @Override
+     * public void afterEach(ExtensionContext context) {
+     *     // BEFORE closing:
+     *     M00nPlaywright.prepareVideoCapture(page);
+     *     
+     *     // Close resources
+     *     page.close();
+     *     browserContext.close();
+     *     
+     *     // AFTER closing:
+     *     M00nPlaywright.captureVideoAfterClose();
+     * }
+     * }</pre>
+     * 
+     * @param page The Playwright Page object (must have video recording enabled)
+     */
+    public static void prepareVideoCapture(Object page) {
+        if (page == null) return;
+        
+        // Only prepare if test failed
+        if (!M00nStep.isCurrentTestFailed()) {
+            return;
+        }
+        
+        try {
+            // Get video path using reflection
+            var pageClass = Class.forName("com.microsoft.playwright.Page");
+            var videoMethod = pageClass.getMethod("video");
+            Object video = videoMethod.invoke(page);
+            
+            if (video != null) {
+                var videoClass = Class.forName("com.microsoft.playwright.Video");
+                var pathMethod = videoClass.getMethod("path");
+                Path videoPath = (Path) pathMethod.invoke(video);
+                
+                if (videoPath != null) {
+                    SAVED_VIDEO_PATH.set(videoPath);
+                    
+                    // Save test ID for later
+                    String testId = M00nStep.current()
+                        .map(result -> {
+                            try {
+                                return (String) result.getClass().getMethod("getTestId").invoke(result);
+                            } catch (Exception e) {
+                                return null;
+                            }
+                        })
+                        .orElse(null);
+                    
+                    if (testId != null) {
+                        SAVED_TEST_ID.set(testId);
+                        log.debug("[M00nPlaywright] Video path saved for capture: {}", videoPath);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.debug("[M00nPlaywright] Video not available: {}", e.getMessage());
+        }
+    }
+    
+    /**
+     * Capture video AFTER context is closed and upload to M00n Reporter.
+     * 
+     * <p>Call this in your custom extension's afterEach(), AFTER closing the context.
+     * The video file is only finalized when the context is closed.</p>
+     * 
+     * <p>Must be paired with {@link #prepareVideoCapture(Object)} called before closing.</p>
+     * 
+     * @return true if video was captured and uploaded successfully
+     */
+    public static boolean captureVideoAfterClose() {
+        Path videoPath = SAVED_VIDEO_PATH.get();
+        String testId = SAVED_TEST_ID.get();
+        
+        // Clear saved state
+        SAVED_VIDEO_PATH.remove();
+        SAVED_TEST_ID.remove();
+        
+        if (videoPath == null || testId == null) {
+            return false;
+        }
+        
+        return captureVideoFromPath(testId, videoPath);
     }
     
     // =========================================================================

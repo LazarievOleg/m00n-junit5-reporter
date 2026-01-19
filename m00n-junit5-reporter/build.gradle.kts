@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "io.m00nreport"
-version = "1.2.5"
+version = "1.2.6"
 
 java {
     sourceCompatibility = JavaVersion.VERSION_17
